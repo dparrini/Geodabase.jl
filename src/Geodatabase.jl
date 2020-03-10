@@ -43,6 +43,25 @@ mutable struct Database
 end
 
 
+mutable struct Table
+  ref::Ptr{Cvoid}
+  name::String
+  db::Database
+  opened::Bool
+end
+
+
+mutable struct Field
+  ref::Ptr{Cvoid}
+  name::String
+  alias::String
+  type::String
+  db::Database
+  len::Int32
+  nullable::Bool
+end
+
+
 function openDatabase(path::String)
   db = Database(C_NULL, path, false)
   ret = ccall((:gdb_create, libgeodb), Ptr{Cvoid}, ())
@@ -78,21 +97,105 @@ function getTablesCount(db::Database)
 end
 
 
-function getTables(db::Database)
-
+function getTableNames(db::Database)
+  tables = Vector{String}(undef, 0)
   if db.ref != C_NULL
     tblcount = getTablesCount(db)
     if tblcount > 0
-      tables = Vector{String}(undef, tblcount)
-      if db.ref != C_NULL
-          ccall((:gdb_get_tables, libgeodb), Cvoid, 
-            (Ptr{Cvoid},Ptr{Ptr{UInt8}}), db.ref, tables)
+
+      if db.ref != C_NULL # Ptr{Cwchar_t}
+        for i = 1:tblcount
+          tablename = Vector{Cwchar_t}(undef, 256)
+          len = ccall((:gdb_get_table_name, libgeodb), Int32, 
+            (Ptr{Cvoid}, Int32, Ptr{Cwchar_t}, Int32), db.ref, i-1, tablename, 256)
+          utablename = transcode(String, tablename[1:len])
+          push!(tables, utablename)
+        end
       end
-      return tables
     end
   end
-  return Vector{String}(undef, 0)
+  return tables
 end
 
+
+function openTable(db::Database, table::String)
+  tbl = Table(C_NULL, table, db, false)
+  ret = ccall((:gdbtable_create, libgeodb), Ptr{Cvoid}, ())
+
+  if ret != C_NULL
+    tbl.ref = ret
+    ret = ccall((:gdbtable_open, libgeodb), Int32, 
+      (Ptr{Cvoid},Ptr{Cvoid},Cwstring), tbl.ref, tbl.db.ref, tbl.name)
+
+    if ret == 0
+      tbl.opened = true
+    else
+      closeTable(tbl)
+    end
+  end
+  return tbl
+end
+
+
+function closeTable(tbl::Table)
+    if tbl.ref != C_NULL
+        ccall((:gdbtable_close, libgeodb), Cvoid, 
+          (Ptr{Cvoid},Ptr{Cvoid},), tbl.db.ref, tbl.ref)
+        tbl.ref = C_NULL
+    end
+end
+
+
+function getTableRowsCount(tbl::Table)
+  if tbl.ref != C_NULL
+    return ccall((:gdbtable_get_row_count, libgeodb), Int32, 
+      (Ptr{Cvoid},), tbl.ref)
+  end
+  return 0
+end
+
+
+# """
+# p = @cbc_ccall getVectorStarts Ptr{CoinBigIndex} (Ptr{Cvoid},) prob
+#     num_cols = Int(getNumCols(prob))
+#     return copy(unsafe_wrap(Array,p,(num_cols+1,)))
+# """
+
+function getFieldName(fieldptr::Ptr{Cvoid})
+  name = Vector{Cwchar_t}(undef, 256)
+
+  len = ccall((:gdbfield_get_name, libgeodb), Int32, 
+                  (Ptr{Cvoid}, Ptr{Cwchar_t}, Int32), 
+                  fieldptr, name, 255)
+
+  return transcode(String, name[1:len])
+end
+
+
+function getTableFields(tbl)
+  fields = Vector{Field}(undef, 0)
+  if tbl.ref != C_NULL
+    fcount = ccall((:gdbtable_get_fields_count, libgeodb), Int32,
+                    (Ptr{Cvoid},), tbl.ref)
+
+    for ifield = 1:fcount
+      ret = ccall((:gdbtable_get_field, libgeodb), Ptr{Cvoid}, 
+                    (Ptr{Cvoid},Int32), tbl.ref, ifield-1)
+      if ret != C_NULL
+        ptr = ret
+
+        name = getFieldName(ptr)
+        alias = "Field"
+        type = "Type"
+        len = 4
+        nullable = true
+
+        push!(fields, Field(ptr, name, alias, type, tbl.db, 
+          len, nullable))
+      end
+    end
+  end
+  return fields
+end
 
 end # module
