@@ -59,7 +59,57 @@ mutable struct Field
   db::Database
   len::Int32
   nullable::Bool
+  # TODO: add a parent member (can point to Table, Query, Row)
 end
+
+
+mutable struct Query
+  ref::Ptr{Cvoid}
+  tbl::Table
+  db::Database
+end
+
+
+mutable struct Row
+  ref::Ptr{Cvoid}
+  query::Query
+  tbl::Table
+  db::Database
+end
+
+
+TypeNames = Dict(
+    0 => "SmallInteger",
+    1 => "Integer",
+    2 => "Single",
+    3 => "Double",
+    4 => "String",
+    5 => "Date",
+    6 => "OID",
+    7 => "Geometry",
+    8 => "Blob",
+    9 => "Raster",
+   10 => "GUID",
+   11 => "GlobalID",
+   12 => "XML",
+)
+
+
+TypeSymbols = Dict(
+    0 => Int16,
+    1 => Int32,
+    2 => Float32,
+    3 => Float64,
+    4 => String,
+    5 => Integer,  # TODO: store date as integer or string or object?
+    6 => String,   # TODO: OID
+    7 => String,   # TODO: Geometry
+    8 => String,   # TODO: Blob
+    9 => String,   # TODO: Raster
+   10 => String,   # TODO: GUID
+   11 => String,   # TODO: GlobalID
+   12 => String,   # TODO: XML
+)
 
 
 function openDatabase(path::String)
@@ -172,6 +222,35 @@ function getFieldName(fieldptr::Ptr{Cvoid})
 end
 
 
+function getFieldAlias(fieldptr::Ptr{Cvoid})
+  name = Vector{Cwchar_t}(undef, 256)
+
+  len = ccall((:gdbfield_get_alias, libgeodb), Int32, 
+                  (Ptr{Cvoid}, Ptr{Cwchar_t}, Int32), 
+                  fieldptr, name, 255)
+
+  return transcode(String, name[1:len])
+end
+
+
+function getFieldType(fieldptr::Ptr{Cvoid})
+  return ccall((:gdbfield_get_type, libgeodb), Int32, 
+                 (Ptr{Cvoid},), fieldptr,)
+end
+
+
+function getFieldLength(fieldptr::Ptr{Cvoid})
+  return ccall((:gdbfield_get_length, libgeodb), Int32, 
+                 (Ptr{Cvoid},), fieldptr,)
+end
+
+
+function getFieldIsNullable(fieldptr::Ptr{Cvoid})
+  return ccall((:gdbfield_get_is_nullable, libgeodb), Int32, 
+                 (Ptr{Cvoid},), fieldptr,)
+end
+
+
 function getTableFields(tbl)
   fields = Vector{Field}(undef, 0)
   if tbl.ref != C_NULL
@@ -184,11 +263,12 @@ function getTableFields(tbl)
       if ret != C_NULL
         ptr = ret
 
+        inttype = getFieldType(ptr)
         name = getFieldName(ptr)
-        alias = "Field"
-        type = "Type"
-        len = 4
-        nullable = true
+        alias = getFieldAlias(ptr)
+        type = TypeNames[inttype]
+        len = getFieldLength(ptr)
+        nullable = getFieldIsNullable(ptr)
 
         push!(fields, Field(ptr, name, alias, type, tbl.db, 
           len, nullable))
@@ -197,5 +277,171 @@ function getTableFields(tbl)
   end
   return fields
 end
+
+
+function searchTable(tbl::Table, subfields, whereClause)
+  if tbl.ref != C_NULL
+    query = openQuery(tbl)
+    if query.ref != C_NULL
+      # TODO: transcode subfields and whereClause
+      wsubfields = transcode(Cwchar_t, subfields)
+      wwhereClause = transcode(Cwchar_t, whereClause)
+      ret = ccall((:gdbtable_search, libgeodb), Int32, 
+                      (Ptr{Cvoid},Ptr{Cvoid},Ptr{Cwchar_t},Ptr{Cwchar_t}),
+                      tbl.ref, query.ref, wsubfields, wwhereClause)
+      if ret != 0
+        closeQuery(query)
+      end
+    end
+    return query
+  end
+  return Query(C_NULL, tbl, tbl.db)
+end
+
+
+# internal?
+function openQuery(tbl::Table)
+  query = Query(C_NULL, tbl, tbl.db)
+  ret = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
+  # TODO: check if the query is successful and set a variable
+  if ret != C_NULL
+    query.ref = ret
+  end
+  return query
+end
+
+
+function closeQuery(query::Query)
+  if query.ref != C_NULL
+    ret = ccall((:gdbquery_close, libgeodb), Int32, (Ptr{Cvoid},), query.ref)
+
+    if ret == 0
+      query.ref = C_NULL
+    end
+  end
+end
+
+
+function getQueryFields(query)
+  # TODO: refactor, similar to getTableFields
+  fields = Vector{Field}(undef, 0)
+  if query.ref != C_NULL
+    fcount = ccall((:gdbquery_get_fields_count, libgeodb), Int32,
+                    (Ptr{Cvoid},), query.ref)
+
+    for ifield = 1:fcount
+      ret = ccall((:gdbquery_get_field, libgeodb), Ptr{Cvoid}, 
+                    (Ptr{Cvoid},Int32), query.ref, ifield-1)
+      if ret != C_NULL
+        ptr = ret
+
+        inttype = getFieldType(ptr)
+        name = getFieldName(ptr)
+        alias = getFieldAlias(ptr)
+        type = TypeNames[inttype]
+        len = getFieldLength(ptr)
+        nullable = getFieldIsNullable(ptr)
+
+        push!(fields, Field(ptr, name, alias, type, query.db, 
+          len, nullable))
+      end
+    end
+  end
+  return fields
+end
+
+
+function nextQuery(query::Query)
+  if query.ref != C_NULL
+    ret = ccall((:gdbquery_next, libgeodb), Ptr{Cvoid}, (Ptr{Cvoid},), query.ref)
+    # rows are deleted with the parent query
+    if ret != C_NULL
+      # create row type
+      return Row(ret, query, query.tbl, query.db)
+    end
+    return Row(C_NULL, query, query.tbl, query.db)
+  end
+end
+
+
+function getRowFields(row)
+  # TODO: refactor, similar to getTableFields
+  fields = Vector{Field}(undef, 0)
+  if row.ref != C_NULL
+    fcount = ccall((:gdbrow_get_fields_count, libgeodb), Int32,
+                    (Ptr{Cvoid},), row.ref)
+
+    for ifield = 1:fcount
+      ret = ccall((:gdbrow_get_field, libgeodb), Ptr{Cvoid}, 
+                    (Ptr{Cvoid},Int32), row.ref, ifield-1)
+      if ret != C_NULL
+        ptr = ret
+
+        inttype = getFieldType(ptr)
+        name = getFieldName(ptr)
+        alias = getFieldAlias(ptr)
+        type = TypeNames[inttype]
+        len = getFieldLength(ptr)
+        nullable = getFieldIsNullable(ptr)
+
+        push!(fields, Field(ptr, name, alias, type, row.db, 
+          len, nullable))
+      end
+    end
+  end
+  return fields
+end
+
+
+function getShortByIndex(row, index)
+  if row.ref != C_NULL
+    return ccall((:gdbrow_get_short_by_index, libgeodb), Int16,
+                 (Ptr{Cvoid},Int32), row.ref, index)
+  end
+  error("Null row reference.")
+end
+
+
+function getIntegerByIndex(row, index)
+  if row.ref != C_NULL
+    return ccall((:gdbrow_get_integer_by_index, libgeodb), Int32,
+                 (Ptr{Cvoid},Int32), row.ref, index)
+  end
+  error("Null row reference.")
+end
+
+
+function getFloatByIndex(row, index)
+  if row.ref != C_NULL
+    return ccall((:gdbrow_get_float_by_index, libgeodb), Float32,
+                 (Ptr{Cvoid},Int32), row.ref, index)
+  end
+  error("Null row reference.")
+end
+
+
+function getDoubleByIndex(row, index)
+  if row.ref != C_NULL
+    return ccall((:gdbrow_get_double_by_index, libgeodb), Float64,
+                 (Ptr{Cvoid},Int32), row.ref, index)
+  end
+  error("Null row reference.")
+end
+
+
+function getStringByIndex(row, index)
+  if row.ref != C_NULL
+    retstr = ccall((:gdbrow_get_string_by_index, libgeodb), Ptr{Cwchar_t},
+                 (Ptr{Cvoid},Int32), row.ref, index)
+    len = ccall(:wcslen, Int32, (Cwstring,), retstr)
+    # println(len)
+    # println(retstr)
+    newarr = unsafe_wrap(Vector{Cwchar_t}, retstr, len, own=true)
+    return transcode(String, newarr)
+  end
+  error("Null row reference.")
+end
+
+  name = Vector{Cwchar_t}(undef, 256)
 
 end # module
