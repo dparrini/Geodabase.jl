@@ -8,7 +8,7 @@ using .Geodatabase
 file = "D:\\BDGD\\BANDEIRANTE_391_2017-12-31_M10_20180807-1511.gdb"
 
 println("Trying to open "*file*"...")
-db = Geodatabase.openDatabase(file)
+db = Geodatabase.Database(file)
 
 
 if db.ref != C_NULL
@@ -37,8 +37,8 @@ if db.ref != C_NULL
     # end
 
     println("Testing a query...")
-    tbl = Geodatabase.openTable(db, "\\UNTRS")
-    if tbl.ref != C_NULL
+    tbl = Geodatabase.Table(db, "\\UNTRS")
+    if tbl.opened
       # q = Geodatabase.searchTable(tbl, "SUB, BARR_1, BARR_2, MUN", "")
       # if q.ref != C_NULL
       #   println("Search ok,")
@@ -91,9 +91,6 @@ if db.ref != C_NULL
   else
     println("Error trying to connect to the database.")
   end
-  
-  Geodatabase.closeDatabase(db)
-  println("Database closed.")
 
 else
   println("Failed.")

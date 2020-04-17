@@ -55,6 +55,20 @@ mutable struct Database
     ref::Ptr{Cvoid}  # Reference to the internal data structure
     path::String
     opened::Bool
+
+    function Database(f::String)
+      if ! isempty(f)
+        handle = _open_database(f)
+        db = new(handle, f, true)
+        finalizer(_close_database, db)
+        return db
+      else
+        # TODO: also test file existence
+        db = new(C_NULL, f, false)
+        finalizer(_close_database, db)
+        error("Empty database path.")
+      end
+    end
 end
 
 
@@ -63,6 +77,24 @@ mutable struct Table
   name::String
   db::Database
   opened::Bool
+
+  function Table(db::Database, f::String)
+    if db.ref != C_NULL || db.opened
+      if ! isempty(f)
+        handle = _open_table(db, f)
+        tbl = new(handle, f, db, true)
+        finalizer(_close_table, tbl)
+        return tbl
+      else
+        # TODO: also test file existence
+        tbl = new(C_NULL, f, db, false)
+        finalizer(_close_table, tbl)
+        error("Empty table name.")
+      end
+    else
+      error("Database not loaded.")
+    end
+  end
 end
 
 
@@ -128,29 +160,30 @@ TypeSymbols = Dict(
 )
 
 
-function openDatabase(path::String)
-  db = Database(C_NULL, path, false)
-  ret = ccall((:gdb_create, libgeodb), Ptr{Cvoid}, ())
+close(obj::Database) = _close_database(obj)
+close(obj::Table) = _close_table(obj)
 
-  if ret != C_NULL
-    db.ref = ret
+
+function _open_database(path::String)
+  ref = ccall((:gdb_create, libgeodb), Ptr{Cvoid}, ())
+  if ref != C_NULL
     ret = ccall((:gdb_open, libgeodb), Int32, 
-      (Ptr{Cvoid},Cwstring), db.ref, db.path)
+      (Ptr{Cvoid},Cwstring), ref, path)
 
-    if ret == 0
-      db.opened = true
-    else
-      closeDatabase(db)
+    if ret != 0
+      closeDatabase(ref)
+      ref = C_NULL
     end
   end
-  return db
+  return ref
 end
 
 
-function closeDatabase(db::Database)
+function _close_database(db::Database)
     if db.ref != C_NULL
         ccall((:gdb_close, libgeodb), Cvoid, (Ptr{Cvoid},), db.ref)
         db.ref = C_NULL
+        db.opened = false
     end
 end
 
@@ -184,30 +217,27 @@ function getTableNames(db::Database)
 end
 
 
-function openTable(db::Database, table::String)
-  tbl = Table(C_NULL, table, db, false)
-  ret = ccall((:gdbtable_create, libgeodb), Ptr{Cvoid}, ())
-
-  if ret != C_NULL
-    tbl.ref = ret
+function _open_table(db::Database, table::String)
+  ref = ccall((:gdbtable_create, libgeodb), Ptr{Cvoid}, ())
+  if ref != C_NULL
     ret = ccall((:gdbtable_open, libgeodb), Int32, 
-      (Ptr{Cvoid},Ptr{Cvoid},Cwstring), tbl.ref, tbl.db.ref, tbl.name)
+      (Ptr{Cvoid},Ptr{Cvoid},Cwstring), ref, db.ref, table)
 
-    if ret == 0
-      tbl.opened = true
-    else
-      closeTable(tbl)
+    if ret != 0
+      _close_table(ref)
+      ref = C_NULL
     end
   end
-  return tbl
+  return ref
 end
 
 
-function closeTable(tbl::Table)
+function _close_table(tbl::Table)
     if tbl.ref != C_NULL
         ccall((:gdbtable_close, libgeodb), Cvoid, 
           (Ptr{Cvoid},Ptr{Cvoid},), tbl.db.ref, tbl.ref)
         tbl.ref = C_NULL
+        tbl.opened = false
     end
 end
 
