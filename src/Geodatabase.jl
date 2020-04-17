@@ -33,19 +33,21 @@ function __init__()
     end
 end
 
-gdbvalue(::Type{T}, handle, col) where {T <: Union{Base.BitSigned, Base.BitUnsigned}} = convert(T, getIntegerByIndex(handle, col-1))
-gdbvalue(::Type{T}, handle, col) where {T <: Union{Float16, Float32}} = convert(T, getFloatByIndex(handle, col-1))
-gdbvalue(::Type{T}, handle, col) where {T <: Float64} = convert(T, getDoubleByIndex(handle, col-1))
-gdbvalue(::Type{T}, handle, col) where {T <: Union{AbstractString, String}} = getStringByIndex(handle, col-1)
-function gdbvalue(::Type{T}, handle, col) where {T}
-    error("Not implemented yet for "*string(T))
-    # blob = convert(Ptr{UInt8}, sqlite3_column_blob(handle, col))
-    # b = sqlite3_column_bytes(handle, col)
-    # buf = zeros(UInt8, b) # global const?
-    # unsafe_copyto!(pointer(buf), blob, b)
-    # r = sqldeserialize(buf)::T
-    # return r
-end
+
+gdbvalue(T::Symbol, handle, col)     = gdbvalue(Val{T}(), handle, col)
+gdbvalue(T::Val{:SmallInteger}, handle, col) = getShortByIndex(handle, col-1)
+gdbvalue(T::Val{:Integer}, handle, col)      = getIntegerByIndex(handle, col-1)
+gdbvalue(T::Val{:Single}, handle, col)       = getFloatByIndex(handle, col-1)
+gdbvalue(T::Val{:Double}, handle, col)       = getDoubleByIndex(handle, col-1)
+gdbvalue(T::Val{:String}, handle, col)       = getStringByIndex(handle, col-1)
+gdbvalue(T::Val{:Date}, handle, col)         = getDateByIndex(handle, col-1)
+gdbvalue(T::Val{:OID}, handle, col)          = getObjectId(handle)
+gdbvalue(T::Val{:Geometry}, handle, col)     = getGeometryByIndex(handle, col-1)
+gdbvalue(T::Val{:Blob}, handle, col)         = getBlobByIndex(handle, col-1)
+gdbvalue(T::Val{:Raster}, handle, col)       = getRasterByIndex(handle, col-1)
+gdbvalue(T::Val{:GUID}, handle, col)         = getGuidByIndex(handle, col-1)
+gdbvalue(T::Val{:GlobalID}, handle, col)     = getGlobalIdByIndex(handle, col-1)
+gdbvalue(T::Val{:XML}, handle, col)          = getXmlByIndex(handle, col-1)
 
 
 mutable struct Database
@@ -164,18 +166,35 @@ TypeNames = Dict(
 
 
 TypeSymbols = Dict(
+    0 => :SmallInteger,
+    1 => :Integer,
+    2 => :Single,
+    3 => :Double,
+    4 => :String,
+    5 => :Date,
+    6 => :OID,
+    7 => :Geometry,
+    8 => :Blob,
+    9 => :Raster,
+   10 => :GUID,
+   11 => :GlobalID,
+   12 => :XML,
+)
+
+
+TypeConversion = Dict(
     0 => Int16,
     1 => Int32,
     2 => Float32,
     3 => Float64,
     4 => String,
     5 => Integer,  # TODO: store date as integer or string or object?
-    6 => String,   # TODO: OID
+    6 => Int32,    # TODO: OID
     7 => String,   # TODO: Geometry
     8 => String,   # TODO: Blob
     9 => String,   # TODO: Raster
-   10 => String,   # TODO: GUID
-   11 => String,   # TODO: GlobalID
+   10 => String,    # TODO: GUID
+   11 => String, # TODO: GlobalID
    12 => String,   # TODO: XML
 )
 
@@ -671,6 +690,15 @@ function getIntegerByIndex(row, index)
 end
 
 
+function getObjectId(row)
+  if row.ref != C_NULL
+    return ccall((:gdbrow_get_objectid, libgeodb), Int32,
+                 (Ptr{Cvoid},), row.ref,)
+  end
+  error("Null row reference.")
+end
+
+
 function getFloatByIndex(row, index)
   if row.ref != C_NULL
     return ccall((:gdbrow_get_float_by_index, libgeodb), Float32,
@@ -702,6 +730,58 @@ function getStringByIndex(row, index)
     return retval
   end
   error("Null row reference.")
+end
+
+
+function getDateByIndex(row, index)
+  # TODO: return type may not be adequated
+  if row.ref != C_NULL
+    return ccall((:gdbrow_get_date_by_index, libgeodb), Int32,
+                 (Ptr{Cvoid},Int32), row.ref, index)
+  end
+  error("Null row reference.")
+end
+
+
+function getGeometryByIndex(row, index)
+  # TODO: implement
+  return ""
+  if row.ref != C_NULL
+    ptr = C_NULL
+    return ccall((:gdbrow_get_geometry_by_index, libgeodb), Float64,
+                 (Ptr{Cvoid},Int32,Ptr{Cvoid}), row.ref, index, ptr)
+  end
+  error("Null row reference.")
+end
+
+
+function getBlobByIndex(row, index)
+  # TODO: implement
+  return ""
+end
+
+
+function getRasterByIndex(row, index)
+  # TODO: implement
+  return ""
+end
+
+
+function getGuidByIndex(row, index)
+  # TODO: implement
+  return ""
+end
+
+
+function getGlobalIdByIndex(row, index)
+  # TODO: implement
+  return ""
+end
+
+
+function getXmlByIndex(row, index)
+  # TODO: implement
+  return ""
 end
 
 

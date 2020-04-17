@@ -73,7 +73,7 @@ function test_Tablesjl(db::Geodatabase.Database)
   end
 
   println("Testing Query -> DataFrame....")
-  query2 = Geodatabase.Query(tbl, "SUB, BARR_1, BARR_2", "")
+  query2 = Geodatabase.Query(tbl, "OBJECTID, SUB, BARR_1, BARR_2", "")
   if query2.row.ref != C_NULL
     df = DataFrames.DataFrame(query2)
     println(df)

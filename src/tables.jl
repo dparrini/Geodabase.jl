@@ -29,8 +29,9 @@ function getvalue(q::GdbQuery, col::Int, ::Type{T}) where {T}
   if isnull
       return missing
   else
-    TT = TypeSymbols[getQueryFieldType(q.ref, col-1)]
-    val = gdbvalue(ifelse(TT === Any && !isbitstype(T), T, TT), q.row, col)
+    type = getQueryFieldType(q.ref, col-1)
+    TT = TypeSymbols[type]
+    val = gdbvalue(Val{TT}(), q.row, col)
     return val
   end
 end
@@ -82,18 +83,21 @@ function Query(table::Table, subfields::AbstractString, whereClause::AbstractStr
       cols = getQueryFieldsCount(query)
       fdi = getQueryFieldInfo(query)
       header = Vector{Symbol}(undef, cols)
-      types = Vector{Type}(undef, cols)
+      jltypes = Vector{Type}(undef, cols)
+      dbtypes = Vector{Symbol}(undef, cols)
       for i = 1:cols
           header[i] = Symbol(getFieldInfoName(fdi, i-1))
-          ftype = TypeSymbols[getFieldInfoType(fdi, i-1)]
+          jtype = TypeConversion[getFieldInfoType(fdi, i-1)]
+          dbtypes[i] = TypeSymbols[getFieldInfoType(fdi, i-1)]
+
           if getFieldInfoIsNullable(fdi, i-1)
-              types[i] = stricttypes ? Union{ftype, Missing} : Any
+              jltypes[i] = stricttypes ? Union{jtype, Missing} : Any
           else
-              types[i] = stricttypes ? ftype : Any
+              jltypes[i] = stricttypes ? jtype : Any
           end
       end
       row = nextQuery(query)
-      return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(query, row)
+      return GdbQuery{NamedTuple{Tuple(header), Tuple{jltypes...}}}(query, row)
     end
   end
   q = QueryObj(C_NULL, table, table.db)
