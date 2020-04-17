@@ -624,10 +624,12 @@ function getStringByIndex(row, index)
     retstr = ccall((:gdbrow_get_string_by_index, libgeodb), Ptr{Cwchar_t},
                  (Ptr{Cvoid},Int32), row.ref, index)
     len = ccall(:wcslen, Int32, (Cwstring,), retstr)
-    # println(len)
-    # println(retstr)
-    newarr = unsafe_wrap(Vector{Cwchar_t}, retstr, len, own=true)
-    return transcode(String, newarr)
+    # TODO: own=true causes lots of hard-to-find bugs. own=false, otoh, may
+    # cause leaks
+    newarr = unsafe_wrap(Vector{Cwchar_t}, retstr, len, own=false)
+    retval = transcode(String, newarr)
+    #println("DBG '"*retval*"' ("*string(len)*")")
+    return retval
   end
   error("Null row reference.")
 end
