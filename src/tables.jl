@@ -36,7 +36,7 @@ function getvalue(q::GdbQuery, col::Int, ::Type{T}) where {T}
   if isnull
       return missing
   else
-    TT = getRowFieldType(q.row, col-1)
+    TT = TypeSymbols[getQueryFieldType(q.ref, col-1)]
     val = gdbvalue(ifelse(TT === Any && !isbitstype(T), T, TT), q.row, col)
     # println("  > "*string(val)*" of type "*string(TT))
     return val
@@ -89,22 +89,26 @@ re-execute the query and position the iterator back at the begining of the resul
 function Query(table::Table, subfields::AbstractString, whereClause::AbstractString; stricttypes::Bool=true, nullable::Bool=true)
   if table.ref != C_NULL
     query = searchTable(table, subfields, whereClause)
-    cols = getQueryFieldsCount(query)
-    fields = getQueryFields(query)
-    header = Vector{Symbol}(undef, cols)
-    types = Vector{Type}(undef, cols)
-    for i = 1:cols
-        header[i] = Symbol(fields[i].name)
-        if fields[i].nullable
-            types[i] = stricttypes ? Union{fields[i].type, Missing} : Any
-        else
-            types[i] = stricttypes ? fields[i].type : Any
-        end
+    if query.ref != C_NULL
+      # query fields is buggy, so its better to avoid its methods
+      cols = getQueryFieldsCount(query)
+      fdi = getQueryFieldInfo(query)
+      header = Vector{Symbol}(undef, cols)
+      types = Vector{Type}(undef, cols)
+      for i = 1:cols
+          header[i] = Symbol(getFieldInfoName(fdi, i-1))
+          ftype = TypeSymbols[getFieldInfoType(fdi, i-1)]
+          if getFieldInfoIsNullable(fdi, i-1)
+              types[i] = stricttypes ? Union{ftype, Missing} : Any
+          else
+              types[i] = stricttypes ? ftype : Any
+          end
+      end
+      # TODO: may skip the first row... check out
+      row = nextQuery(query)
+      println("First row: "*string(row.ref))
+      return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(query, row)
     end
-    # TODO: may skip the first row... check out
-    row = nextQuery(query)
-    println("First row: "*string(row.ref))
-    return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(query, row)
   end
   return nothing
 end

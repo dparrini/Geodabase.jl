@@ -98,6 +98,17 @@ mutable struct Table
 end
 
 
+mutable struct FieldInfo
+  ref::Ptr{Cvoid}
+
+  function FieldInfo(ptr::Ptr{Cvoid})
+    fdi = new(ptr)
+    finalizer(_destroy_fieldinfo, fdi)
+  end
+end
+
+
+
 mutable struct Field
   ref::Ptr{Cvoid}
   name::String
@@ -115,6 +126,12 @@ mutable struct QueryObj
   ref::Ptr{Cvoid}
   tbl::Table
   db::Database
+
+  function QueryObj(ref::Ptr{Cvoid}, tbl::Table, db::Database)
+    qobj = new(ref, tbl, db)
+    finalizer(_close_query, qobj)
+    return qobj
+  end
 end
 
 
@@ -162,6 +179,7 @@ TypeSymbols = Dict(
 
 close(obj::Database) = _close_database(obj)
 close(obj::Table) = _close_table(obj)
+close(obj::QueryObj) = _close_query(obj)
 
 
 function _open_database(path::String)
@@ -251,6 +269,53 @@ function getTableRowsCount(tbl::Table)
 end
 
 
+function getTableFieldInfo(tbl::Table)
+  fdi = FieldInfo(C_NULL)
+  if tbl.ref != C_NULL
+    ref = ccall((:gdbtable_get_fieldinfo, libgeodb), Ptr{Cvoid}, 
+      (Ptr{Cvoid},), tbl.ref)
+    fdi.ref = ref
+  end
+  return fdi
+end
+
+
+function getFieldInfoCount(fieldinfo::FieldInfo)
+  return ccall((:gdbfieldinfo_get_count, libgeodb), Int32, 
+                 (Ptr{Cvoid},), fieldinfo.ref,)
+end
+
+function getFieldInfoName(fieldinfo::FieldInfo, index::Int)
+  name = Vector{Cwchar_t}(undef, 256)
+
+  len = ccall((:gdbfieldinfo_get_name, libgeodb), Int32, 
+                  (Ptr{Cvoid}, Int32, Ptr{Cwchar_t}, Int32), 
+                  fieldinfo.ref, index, name, 255)
+
+  return transcode(String, name[1:len])
+end
+
+function getFieldInfoType(fieldinfo::FieldInfo, index::Int)
+  return ccall((:gdbfieldinfo_get_type, libgeodb), Int32, 
+                 (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+end
+
+function getFieldInfoLength(fieldinfo::FieldInfo, index::Int)
+  return ccall((:gdbfieldinfo_get_length, libgeodb), Int32, 
+                 (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+end
+
+function getFieldInfoIsNullable(fieldinfo::FieldInfo, index::Int)
+  return ccall((:gdbfieldinfo_get_is_nullable, libgeodb), Bool, 
+                 (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+end
+
+function _destroy_fieldinfo(fieldinfo::FieldInfo)
+  return ccall((:gdbfieldinfo_destroy, libgeodb), Int32, 
+                 (Ptr{Cvoid},), fieldinfo.ref,)
+end
+
+
 # """
 # p = @cbc_ccall getVectorStarts Ptr{CoinBigIndex} (Ptr{Cvoid},) prob
 #     num_cols = Int(getNumCols(prob))
@@ -328,7 +393,7 @@ end
 
 function searchTable(tbl::Table, subfields, whereClause)
   if tbl.ref != C_NULL
-    query = openQuery(tbl)
+    query = _open_query(tbl)
     if query.ref != C_NULL
       # TODO: transcode subfields and whereClause
       wsubfields = transcode(Cwchar_t, subfields)
@@ -337,28 +402,24 @@ function searchTable(tbl::Table, subfields, whereClause)
                       (Ptr{Cvoid},Ptr{Cvoid},Ptr{Cwchar_t},Ptr{Cwchar_t}),
                       tbl.ref, query.ref, wsubfields, wwhereClause)
       if ret != 0
-        closeQuery(query)
+        _close_query(query)
       end
     end
     return query
   end
-  return Query(C_NULL, tbl, tbl.db)
+  return QueryObj(C_NULL, tbl, tbl.db)
 end
 
 
-# internal?
-function openQuery(tbl::Table)
+function _open_query(tbl::Table)
   query = QueryObj(C_NULL, tbl, tbl.db)
-  ret = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
+  query.ref = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
   # TODO: check if the query is successful and set a variable
-  if ret != C_NULL
-    query.ref = ret
-  end
   return query
 end
 
 
-function closeQuery(query::QueryObj)
+function _close_query(query::QueryObj)
   if query.ref != C_NULL
     ret = ccall((:gdbquery_close, libgeodb), Int32, (Ptr{Cvoid},), query.ref)
 
@@ -369,26 +430,45 @@ function closeQuery(query::QueryObj)
 end
 
 
-function getQueryFieldType(query, index)
-  ptr = ccall((:gdbquery_get_field, libgeodb), Ptr{Cvoid}, 
-                (Ptr{Cvoid},Int32), query.ref, index)
-  if ptr != C_NULL
-    inttype = getFieldType(ptr)
-    return TypeSymbols[inttype]
+function getTableFieldInfo(tbl::Table)
+  fdi = FieldInfo(C_NULL)
+  if tbl.ref != C_NULL
+    ref = ccall((:gdbtable_get_fieldinfo, libgeodb), Ptr{Cvoid}, 
+      (Ptr{Cvoid},), tbl.ref)
+    fdi.ref = ref
   end
-  return Any
+  return fdi
+end
+
+function getTableFieldsCount(table)
+  return getFieldInfoCount(getTableFieldInfo(table))
+end
+
+
+function getTableFieldType(table, index)
+  return getFieldInfoType(getTableFieldInfo(table), index)
 end
 
 
 function getQueryFieldsCount(query)
-  fcount = 0
-  if query.ref != C_NULL
-    fcount = ccall((:gdbquery_get_fields_count, libgeodb), Int32,
-                    (Ptr{Cvoid},), query.ref)
-  end
-  return fcount
+  return getFieldInfoCount(getQueryFieldInfo(query))
 end
 
+
+function getQueryFieldType(query, index)
+  return getFieldInfoType(getQueryFieldInfo(query), index)
+end
+
+
+function getQueryFieldInfo(query::QueryObj)
+  fdi = FieldInfo(C_NULL)
+  if query.ref != C_NULL
+    ref = ccall((:gdbquery_get_fieldinfo, libgeodb), Ptr{Cvoid}, 
+      (Ptr{Cvoid},), query.ref)
+    fdi.ref = ref
+  end
+  return fdi
+end
 
 function getQueryFields(query)
   # TODO: refactor, similar to getTableFields
@@ -432,14 +512,23 @@ function nextQuery(query::QueryObj)
 end
 
 
-function getRowFieldType(row, index)
-  ptr = ccall((:gdbrow_get_field, libgeodb), Ptr{Cvoid}, 
-                (Ptr{Cvoid},Int32), row.ref, index)
-  if ptr != C_NULL
-    inttype = getFieldType(ptr)
-    return TypeSymbols[inttype]
+function getRowFieldInfo(row::Row)
+  fdi = FieldInfo(C_NULL)
+  if row.ref != C_NULL
+    ref = ccall((:gdbrow_get_fieldinfo, libgeodb), Ptr{Cvoid}, 
+      (Ptr{Cvoid},), row.ref)
+    fdi.ref = ref
   end
-  return Any
+  return fdi
+end
+
+
+function getRowFieldCount(row)
+  return getFieldInfoCount(getRowFieldInfo(row))
+end
+
+function getRowFieldType(row, index)
+  return getFieldInfoType(getRowFieldInfo(row), index)
 end
 
 
