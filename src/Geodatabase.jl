@@ -398,6 +398,8 @@ function searchTable(tbl::Table, subfields, whereClause)
       # TODO: transcode subfields and whereClause
       wsubfields = transcode(Cwchar_t, subfields)
       wwhereClause = transcode(Cwchar_t, whereClause)
+      push!(wsubfields, 0)
+      push!(wwhereClause, 0)
       ret = ccall((:gdbtable_search, libgeodb), Int32, 
                       (Ptr{Cvoid},Ptr{Cvoid},Ptr{Cwchar_t},Ptr{Cwchar_t}),
                       tbl.ref, query.ref, wsubfields, wwhereClause)
