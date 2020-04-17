@@ -35,20 +35,20 @@ function __init__()
     end
 end
 
-gdbvalue(::Type{T}, handle, col) where {T <: Union{Base.BitSigned, Base.BitUnsigned}} = convert(T, getIntegerByIndex(handle, col))
-gdbvalue(::Type{T}, handle, col) where {T <: Union{Float16, Float32}} = convert(T, getFloatByIndex(handle, col))
-gdbvalue(::Type{T}, handle, col) where {T <: Float64} = convert(T, getDoubleByIndex(handle, col))
+gdbvalue(::Type{T}, handle, col) where {T <: Union{Base.BitSigned, Base.BitUnsigned}} = convert(T, getIntegerByIndex(handle, col-1))
+gdbvalue(::Type{T}, handle, col) where {T <: Union{Float16, Float32}} = convert(T, getFloatByIndex(handle, col-1))
+gdbvalue(::Type{T}, handle, col) where {T <: Float64} = convert(T, getDoubleByIndex(handle, col-1))
 #TODO: test returning a WeakRefString instead of calling `unsafe_string`
-gdbvalue(::Type{T}, handle, col) where {T <: Union{AbstractString, String}} = convert(T, getStringByIndex(handle, col))
-function gdbvalue(::Type{T}, handle, col) where {T}
-    error("Not implemented yet for "*string(T))
-    # blob = convert(Ptr{UInt8}, sqlite3_column_blob(handle, col))
-    # b = sqlite3_column_bytes(handle, col)
-    # buf = zeros(UInt8, b) # global const?
-    # unsafe_copyto!(pointer(buf), blob, b)
-    # r = sqldeserialize(buf)::T
-    # return r
-end
+gdbvalue(::Type{T}, handle, col) where {T <: Union{AbstractString, String}} = getStringByIndex(handle, col-1)
+# function gdbvalue(::Type{T}, handle, col) where {T}
+#     error("Not implemented yet for "*string(T))
+#     # blob = convert(Ptr{UInt8}, sqlite3_column_blob(handle, col))
+#     # b = sqlite3_column_bytes(handle, col)
+#     # buf = zeros(UInt8, b) # global const?
+#     # unsafe_copyto!(pointer(buf), blob, b)
+#     # r = sqldeserialize(buf)::T
+#     # return r
+# end
 
 
 mutable struct Database

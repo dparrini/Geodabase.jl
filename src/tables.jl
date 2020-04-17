@@ -1,8 +1,6 @@
 using Tables
 
-sym(ptr) = ccall(:jl_symbol, Ref{Symbol}, (Ptr{UInt8},), ptr)
-
-struct GdbQuery{NT}
+mutable struct GdbQuery{NT}
     ref::QueryObj
     row::Row
 end
@@ -15,7 +13,10 @@ Tables.schema(q::GdbQuery{NamedTuple{names, types}}) where {names, types} = Tabl
 Base.IteratorSize(::Type{<:GdbQuery}) = Base.SizeUnknown()
 Base.eltype(q::GdbQuery{NT}) where {NT} = NT
 
+
 function reset!(q::GdbQuery)
+  println("reset!")
+
   # TODO
   # sqlite3_reset(q.stmt.handle)
   # q.status[] = execute!(q.stmt)
@@ -23,16 +24,22 @@ function reset!(q::GdbQuery)
 end
 
 function done(q::GdbQuery)
-  return q.ref == C_NULL
+  if q.row.ref == C_NULL
+    println(" >>>> done")
+  end
+  return q.row.ref == C_NULL
 end
 
 function getvalue(q::GdbQuery, col::Int, ::Type{T}) where {T}
+  # println("getvalue "*string(col-1))
   isnull = getIsNullByIndex(q.row, col-1)
   if isnull
       return missing
   else
     TT = getRowFieldType(q.row, col-1)
-    return gdbvalue(ifelse(TT === Any && !isbitstype(T), T, TT), q.row, col)
+    val = gdbvalue(ifelse(TT === Any && !isbitstype(T), T, TT), q.row, col)
+    # println("  > "*string(val)*" of type "*string(TT))
+    return val
   end
 end
 
@@ -46,8 +53,12 @@ function generate_namedtuple(::Type{NamedTuple{names, types}}, q) where {names, 
 end
 
 function Base.iterate(q::GdbQuery{NT}) where {NT}
+  # println("iterator 1")
+  # println(q.row.ref)
   done(q) && return nothing
+  # println(" > Not done")
   nt = generate_namedtuple(NT, q)
+  # println(" > Named tuple...")
   return nt, nothing
 end
 
@@ -77,7 +88,7 @@ re-execute the query and position the iterator back at the begining of the resul
 """
 function Query(table::Table, subfields::AbstractString, whereClause::AbstractString; stricttypes::Bool=true, nullable::Bool=true)
   if table.ref != C_NULL
-    query = searchTable(table::Table, subfields, whereClause)
+    query = searchTable(table, subfields, whereClause)
     cols = getQueryFieldsCount(query)
     fields = getQueryFields(query)
     header = Vector{Symbol}(undef, cols)
@@ -90,9 +101,9 @@ function Query(table::Table, subfields::AbstractString, whereClause::AbstractStr
             types[i] = stricttypes ? fields[i].type : Any
         end
     end
-
     # TODO: may skip the first row... check out
     row = nextQuery(query)
+    println("First row: "*string(row.ref))
     return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(query, row)
   end
   return nothing
