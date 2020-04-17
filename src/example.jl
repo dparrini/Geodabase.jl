@@ -1,5 +1,8 @@
+using DataFrames
+
 include("Geodatabase.jl")
 using .Geodatabase
+
 
 file = "D:\\BDGD\\BANDEIRANTE_391_2017-12-31_M10_20180807-1511.gdb"
 
@@ -23,7 +26,7 @@ if db.ref != C_NULL
         fields = Geodatabase.getTableFields(tbl)
 
         for field in fields
-          println("     - "*field.name*" : "*field.type)
+          println("     - "*field.name*" : "*field.typestr)
         end
 
         Geodatabase.closeTable(tbl)
@@ -34,31 +37,39 @@ if db.ref != C_NULL
 
     println("Testing a query...")
     tbl = Geodatabase.openTable(db, "\\UNTRS")
-    q = Geodatabase.searchTable(tbl, "SUB, BARR_1, BARR_2, MUN", "")
-    if q.ref != C_NULL
-      println("Search ok,")
+    # q = Geodatabase.searchTable(tbl, "SUB, BARR_1, BARR_2, MUN", "")
+    # if q.ref != C_NULL
+    #   println("Search ok,")
       
-      row = Geodatabase.nextQuery(q)
-      fields = Geodatabase.getRowFields(row)
-      fcount = length(fields)
-      println("Returned with "*string(fcount)*" fields.")
-      for field in fields
-          println("     - "*field.name*" : "*field.type)
-      end
-      rcount = 0
-      println("First row values:")
-      for index = 0:fcount-1
-        print(Geodatabase.getStringByIndex(row, index)*", ")
-      end
-      print("\n")
-      while row.ref != C_NULL
-        global row = Geodatabase.nextQuery(q)
-        global rcount +=  1
-      end
-      Geodatabase.closeQuery(q)
-      Geodatabase.closeTable(tbl)
-      println("There are "*string(rcount)*" rows.")
-    end
+    #   row = Geodatabase.nextQuery(q)
+    #   fields = Geodatabase.getRowFields(row)
+    #   fcount = length(fields)
+    #   println("Returned with "*string(fcount)*" fields.")
+    #   for field in fields
+    #       println("     - "*field.name*" : "*field.typestr)
+    #   end
+    #   rcount = 0
+    #   println("First row values:")
+    #   for index = 0:fcount-1
+    #     print(Geodatabase.getStringByIndex(row, index)*", ")
+    #   end
+    #   print("\n")
+    #   while row.ref != C_NULL
+    #     global row = Geodatabase.nextQuery(q)
+    #     global rcount +=  1
+    #   end
+    #   Geodatabase.closeQuery(q)
+    #   println("There are "*string(rcount)*" rows.")
+    # end
+
+    println("Testing another query (with Tables)...")
+
+    q = Geodatabase.Query(tbl, "SUB, BARR_1, BARR_2, MUN", "")
+    print("ref: "*string(q.ref)*" row: "*string(q.row))
+    df = DataFrames.DataFrame(Tables.Table(q))
+    print(df)
+
+    Geodatabase.closeTable(tbl)
   else
     println("Error trying to connect to the database.")
   end

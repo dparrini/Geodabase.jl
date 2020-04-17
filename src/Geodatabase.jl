@@ -35,6 +35,21 @@ function __init__()
     end
 end
 
+gdbvalue(::Type{T}, handle, col) where {T <: Union{Base.BitSigned, Base.BitUnsigned}} = convert(T, getIntegerByIndex(handle, col))
+gdbvalue(::Type{T}, handle, col) where {T <: Union{Float16, Float32}} = convert(T, getFloatByIndex(handle, col))
+gdbvalue(::Type{T}, handle, col) where {T <: Float64} = convert(T, getDoubleByIndex(handle, col))
+#TODO: test returning a WeakRefString instead of calling `unsafe_string`
+gdbvalue(::Type{T}, handle, col) where {T <: Union{AbstractString, String}} = convert(T, getStringByIndex(handle, col))
+function gdbvalue(::Type{T}, handle, col) where {T}
+    error("Not implemented yet for "*string(T))
+    # blob = convert(Ptr{UInt8}, sqlite3_column_blob(handle, col))
+    # b = sqlite3_column_bytes(handle, col)
+    # buf = zeros(UInt8, b) # global const?
+    # unsafe_copyto!(pointer(buf), blob, b)
+    # r = sqldeserialize(buf)::T
+    # return r
+end
+
 
 mutable struct Database
     ref::Ptr{Cvoid}  # Reference to the internal data structure
@@ -55,15 +70,16 @@ mutable struct Field
   ref::Ptr{Cvoid}
   name::String
   alias::String
-  type::String
+  type
+  typestr::String
   db::Database
   len::Int32
   nullable::Bool
-  # TODO: add a parent member (can point to Table, Query, Row)
+  # TODO: add a parent member (can point to Table, QueryObj, Row)
 end
 
 
-mutable struct Query
+mutable struct QueryObj
   ref::Ptr{Cvoid}
   tbl::Table
   db::Database
@@ -72,7 +88,7 @@ end
 
 mutable struct Row
   ref::Ptr{Cvoid}
-  query::Query
+  query::QueryObj
   tbl::Table
   db::Database
 end
@@ -266,11 +282,12 @@ function getTableFields(tbl)
         inttype = getFieldType(ptr)
         name = getFieldName(ptr)
         alias = getFieldAlias(ptr)
-        type = TypeNames[inttype]
+        typestr = TypeNames[inttype]
+        type = TypeSymbols[inttype]
         len = getFieldLength(ptr)
         nullable = getFieldIsNullable(ptr)
 
-        push!(fields, Field(ptr, name, alias, type, tbl.db, 
+        push!(fields, Field(ptr, name, alias, type, typestr, tbl.db, 
           len, nullable))
       end
     end
@@ -301,7 +318,7 @@ end
 
 # internal?
 function openQuery(tbl::Table)
-  query = Query(C_NULL, tbl, tbl.db)
+  query = QueryObj(C_NULL, tbl, tbl.db)
   ret = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
   # TODO: check if the query is successful and set a variable
   if ret != C_NULL
@@ -311,7 +328,7 @@ function openQuery(tbl::Table)
 end
 
 
-function closeQuery(query::Query)
+function closeQuery(query::QueryObj)
   if query.ref != C_NULL
     ret = ccall((:gdbquery_close, libgeodb), Int32, (Ptr{Cvoid},), query.ref)
 
@@ -322,12 +339,32 @@ function closeQuery(query::Query)
 end
 
 
+function getQueryFieldType(query, index)
+  ptr = ccall((:gdbquery_get_field, libgeodb), Ptr{Cvoid}, 
+                (Ptr{Cvoid},Int32), query.ref, index)
+  if ptr != C_NULL
+    inttype = getFieldType(ptr)
+    return TypeSymbols[inttype]
+  end
+  return Any
+end
+
+
+function getQueryFieldsCount(query)
+  fcount = 0
+  if query.ref != C_NULL
+    fcount = ccall((:gdbquery_get_fields_count, libgeodb), Int32,
+                    (Ptr{Cvoid},), query.ref)
+  end
+  return fcount
+end
+
+
 function getQueryFields(query)
   # TODO: refactor, similar to getTableFields
   fields = Vector{Field}(undef, 0)
   if query.ref != C_NULL
-    fcount = ccall((:gdbquery_get_fields_count, libgeodb), Int32,
-                    (Ptr{Cvoid},), query.ref)
+    fcount = getQueryFieldsCount(query)
 
     for ifield = 1:fcount
       ret = ccall((:gdbquery_get_field, libgeodb), Ptr{Cvoid}, 
@@ -338,11 +375,12 @@ function getQueryFields(query)
         inttype = getFieldType(ptr)
         name = getFieldName(ptr)
         alias = getFieldAlias(ptr)
-        type = TypeNames[inttype]
+        typestr = TypeNames[inttype]
+        type = TypeSymbols[inttype]
         len = getFieldLength(ptr)
         nullable = getFieldIsNullable(ptr)
 
-        push!(fields, Field(ptr, name, alias, type, query.db, 
+        push!(fields, Field(ptr, name, alias, type, typestr, query.db, 
           len, nullable))
       end
     end
@@ -351,7 +389,7 @@ function getQueryFields(query)
 end
 
 
-function nextQuery(query::Query)
+function nextQuery(query::QueryObj)
   if query.ref != C_NULL
     ret = ccall((:gdbquery_next, libgeodb), Ptr{Cvoid}, (Ptr{Cvoid},), query.ref)
     # rows are deleted with the parent query
@@ -361,6 +399,36 @@ function nextQuery(query::Query)
     end
     return Row(C_NULL, query, query.tbl, query.db)
   end
+end
+
+
+function getRowFieldType(row, index)
+  ptr = ccall((:gdbrow_get_field, libgeodb), Ptr{Cvoid}, 
+                (Ptr{Cvoid},Int32), row.ref, index)
+  if ptr != C_NULL
+    inttype = getFieldType(ptr)
+    return TypeSymbols[inttype]
+  end
+  return Any
+end
+
+
+function getRowField(row, index)
+  ptr = ccall((:gdbrow_get_field, libgeodb), Ptr{Cvoid}, 
+                (Ptr{Cvoid},Int32), row.ref, index)
+  if ptr != C_NULL
+    inttype = getFieldType(ptr)
+    name = getFieldName(ptr)
+    alias = getFieldAlias(ptr)
+    typestr = TypeNames[inttype]
+    type = TypeSymbols[inttype]
+    len = getFieldLength(ptr)
+    nullable = getFieldIsNullable(ptr)
+
+    return Field(ptr, name, alias, type, typestr, row.db, 
+      len, nullable)
+  end
+  return nothing
 end
 
 
@@ -380,11 +448,12 @@ function getRowFields(row)
         inttype = getFieldType(ptr)
         name = getFieldName(ptr)
         alias = getFieldAlias(ptr)
-        type = TypeNames[inttype]
+        typestr = TypeNames[inttype]
+        type = TypeSymbols[inttype]
         len = getFieldLength(ptr)
         nullable = getFieldIsNullable(ptr)
 
-        push!(fields, Field(ptr, name, alias, type, row.db, 
+        push!(fields, Field(ptr, name, alias, type, typestr, row.db, 
           len, nullable))
       end
     end
@@ -442,6 +511,18 @@ function getStringByIndex(row, index)
   error("Null row reference.")
 end
 
-  name = Vector{Cwchar_t}(undef, 256)
+
+function getIsNullByIndex(row, index)
+  if row.ref != C_NULL
+    retval = ccall((:gdbrow_is_null_by_index, libgeodb), UInt8,
+                 (Ptr{Cvoid},Int32), row.ref, index)
+    return convert(Bool, retval)
+  end
+  error("Null row reference.")
+end
+
+
+include("tables.jl")
+
 
 end # module
