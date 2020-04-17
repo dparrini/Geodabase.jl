@@ -26,8 +26,6 @@ function __init__()
         global amplexe_env_val = "$(julia_bindir)$(pathsep)$(get(ENV,"PATH",""))"
     end
 
-    # Still need this for AmplNLWriter to work until it uses amplexefun defined above
-    # (amplexefun wraps the call to the binary and doesn't leave environment variables changed.)
     @static if Sys.isapple()
          ENV["DYLD_LIBRARY_PATH"] = string(get(ENV, "DYLD_LIBRARY_PATH", ""), ":", julia_libdir)
     elseif Sys.islinux()
@@ -38,17 +36,16 @@ end
 gdbvalue(::Type{T}, handle, col) where {T <: Union{Base.BitSigned, Base.BitUnsigned}} = convert(T, getIntegerByIndex(handle, col-1))
 gdbvalue(::Type{T}, handle, col) where {T <: Union{Float16, Float32}} = convert(T, getFloatByIndex(handle, col-1))
 gdbvalue(::Type{T}, handle, col) where {T <: Float64} = convert(T, getDoubleByIndex(handle, col-1))
-#TODO: test returning a WeakRefString instead of calling `unsafe_string`
 gdbvalue(::Type{T}, handle, col) where {T <: Union{AbstractString, String}} = getStringByIndex(handle, col-1)
-# function gdbvalue(::Type{T}, handle, col) where {T}
-#     error("Not implemented yet for "*string(T))
-#     # blob = convert(Ptr{UInt8}, sqlite3_column_blob(handle, col))
-#     # b = sqlite3_column_bytes(handle, col)
-#     # buf = zeros(UInt8, b) # global const?
-#     # unsafe_copyto!(pointer(buf), blob, b)
-#     # r = sqldeserialize(buf)::T
-#     # return r
-# end
+function gdbvalue(::Type{T}, handle, col) where {T}
+    error("Not implemented yet for "*string(T))
+    # blob = convert(Ptr{UInt8}, sqlite3_column_blob(handle, col))
+    # b = sqlite3_column_bytes(handle, col)
+    # buf = zeros(UInt8, b) # global const?
+    # unsafe_copyto!(pointer(buf), blob, b)
+    # r = sqldeserialize(buf)::T
+    # return r
+end
 
 
 mutable struct Database
@@ -140,6 +137,12 @@ mutable struct Row
   query::QueryObj
   tbl::Table
   db::Database
+
+  function Row(ref, query, tbl, db)
+    obj = new(ref, query, tbl, db)
+    finalizer(_destroy_row, obj)
+    return obj
+  end
 end
 
 
@@ -180,6 +183,15 @@ TypeSymbols = Dict(
 close(obj::Database) = _close_database(obj)
 close(obj::Table) = _close_table(obj)
 close(obj::QueryObj) = _close_query(obj)
+close(obj::FieldInfo) = _destroy_fieldinfo(obj)
+close(obj::Row) = _destroy_row(obj)
+
+
+describe(obj::Database) = _describe_db(obj)
+describe(obj::Table) = _describe_table(obj)
+describe(obj::QueryObj) = _describe_query(obj)
+describe(obj::Row) = _describe_row(obj)
+describe(obj::FieldInfo) = _describe_fieldinfo(obj)
 
 
 function _open_database(path::String)
@@ -203,6 +215,12 @@ function _close_database(db::Database)
         db.ref = C_NULL
         db.opened = false
     end
+end
+
+
+function _describe_database(db::Database)
+  # TODO: implement
+  return
 end
 
 
@@ -260,6 +278,12 @@ function _close_table(tbl::Table)
 end
 
 
+function _describe_table(table::Table)
+  _describe_fieldinfo(getTableFieldInfo(table))
+  return
+end
+
+
 function getTableRowsCount(tbl::Table)
   if tbl.ref != C_NULL
     return ccall((:gdbtable_get_row_count, libgeodb), Int32, 
@@ -281,38 +305,68 @@ end
 
 
 function getFieldInfoCount(fieldinfo::FieldInfo)
-  return ccall((:gdbfieldinfo_get_count, libgeodb), Int32, 
-                 (Ptr{Cvoid},), fieldinfo.ref,)
+  if fieldinfo.ref != C_NULL
+    return ccall((:gdbfieldinfo_get_count, libgeodb), Int32, 
+                   (Ptr{Cvoid},), fieldinfo.ref,)
+  end
+  return 0
 end
 
 function getFieldInfoName(fieldinfo::FieldInfo, index::Int)
-  name = Vector{Cwchar_t}(undef, 256)
+  if fieldinfo.ref != C_NULL
+    name = Vector{Cwchar_t}(undef, 256)
 
-  len = ccall((:gdbfieldinfo_get_name, libgeodb), Int32, 
-                  (Ptr{Cvoid}, Int32, Ptr{Cwchar_t}, Int32), 
-                  fieldinfo.ref, index, name, 255)
+    len = ccall((:gdbfieldinfo_get_name, libgeodb), Int32, 
+                    (Ptr{Cvoid}, Int32, Ptr{Cwchar_t}, Int32), 
+                    fieldinfo.ref, index, name, 255)
 
-  return transcode(String, name[1:len])
+    return transcode(String, name[1:len])
+  end
+  return ""
 end
 
 function getFieldInfoType(fieldinfo::FieldInfo, index::Int)
-  return ccall((:gdbfieldinfo_get_type, libgeodb), Int32, 
-                 (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+  if fieldinfo.ref != C_NULL
+    return ccall((:gdbfieldinfo_get_type, libgeodb), Int32, 
+                   (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+  end
+  return 0
 end
 
 function getFieldInfoLength(fieldinfo::FieldInfo, index::Int)
-  return ccall((:gdbfieldinfo_get_length, libgeodb), Int32, 
-                 (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+  if fieldinfo.ref != C_NULL
+    return ccall((:gdbfieldinfo_get_length, libgeodb), Int32, 
+                   (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+  end
+  return 0
 end
 
 function getFieldInfoIsNullable(fieldinfo::FieldInfo, index::Int)
-  return ccall((:gdbfieldinfo_get_is_nullable, libgeodb), Bool, 
-                 (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+  if fieldinfo.ref != C_NULL
+    return ccall((:gdbfieldinfo_get_is_nullable, libgeodb), Bool, 
+                   (Ptr{Cvoid}, Int32), fieldinfo.ref, index)
+  end
+  return false
 end
 
 function _destroy_fieldinfo(fieldinfo::FieldInfo)
-  return ccall((:gdbfieldinfo_destroy, libgeodb), Int32, 
-                 (Ptr{Cvoid},), fieldinfo.ref,)
+  if fieldinfo.ref != C_NULL
+    ccall((:gdbfieldinfo_destroy, libgeodb), Int32, 
+           (Ptr{Cvoid},), fieldinfo.ref,)
+    fieldinfo.ref = C_NULL
+  end
+end
+
+
+function _describe_fieldinfo(fieldinfo::FieldInfo)
+  # TODO: implement
+  fcount = Geodatabase.getFieldInfoCount(fieldinfo)
+  println(" "*string(fcount)*" fields:")
+  for field in 1:fcount
+    name = Geodatabase.getFieldInfoName(fieldinfo, field-1)
+    ftype = Geodatabase.TypeNames[Geodatabase.getFieldInfoType(fieldinfo, field-1)]
+    println(" - "*name*" : "*ftype)
+  end
 end
 
 
@@ -413,25 +467,6 @@ function searchTable(tbl::Table, subfields, whereClause)
 end
 
 
-function _open_query(tbl::Table)
-  query = QueryObj(C_NULL, tbl, tbl.db)
-  query.ref = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
-  # TODO: check if the query is successful and set a variable
-  return query
-end
-
-
-function _close_query(query::QueryObj)
-  if query.ref != C_NULL
-    ret = ccall((:gdbquery_close, libgeodb), Int32, (Ptr{Cvoid},), query.ref)
-
-    if ret == 0
-      query.ref = C_NULL
-    end
-  end
-end
-
-
 function getTableFieldInfo(tbl::Table)
   fdi = FieldInfo(C_NULL)
   if tbl.ref != C_NULL
@@ -449,6 +484,27 @@ end
 
 function getTableFieldType(table, index)
   return getFieldInfoType(getTableFieldInfo(table), index)
+end
+
+
+function _open_query(tbl::Table)
+  query = QueryObj(C_NULL, tbl, tbl.db)
+  query.ref = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
+  # TODO: check if the query is successful and set a variable
+  return query
+end
+
+
+function _close_query(query::QueryObj)
+  if query.ref != C_NULL
+    ret = ccall((:gdbquery_close, libgeodb), Int32, (Ptr{Cvoid},), query.ref)
+    query.ref = C_NULL
+  end
+end
+
+
+function _describe_query(query::QueryObj)
+  _describe_fieldinfo(getQueryFieldInfo(query))
 end
 
 
@@ -511,6 +567,20 @@ function nextQuery(query::QueryObj)
     end
     return Row(C_NULL, query, query.tbl, query.db)
   end
+end
+
+
+function _destroy_row(row::Row)
+  if row.ref != C_NULL
+    ccall((:gdbrow_destroy, libgeodb), Int32, 
+           (Ptr{Cvoid},), row.ref,)
+    row.ref = C_NULL
+  end
+end
+
+
+function _describe_row(row::Row)
+  _describe_fieldinfo(getRowFieldInfo(row))
 end
 
 

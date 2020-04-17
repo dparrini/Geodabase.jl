@@ -15,30 +15,22 @@ Base.eltype(q::GdbQuery{NT}) where {NT} = NT
 
 
 function reset!(q::GdbQuery)
-  println("reset!")
-
-  # TODO
-  # sqlite3_reset(q.stmt.handle)
-  # q.status[] = execute!(q.stmt)
-  # return
+  error("reset! not implemented yet")
 end
 
 function done(q::GdbQuery)
   if q.row.ref == C_NULL
-    println(" >>>> done")
   end
   return q.row.ref == C_NULL
 end
 
 function getvalue(q::GdbQuery, col::Int, ::Type{T}) where {T}
-  # println("getvalue "*string(col-1))
   isnull = getIsNullByIndex(q.row, col-1)
   if isnull
       return missing
   else
     TT = TypeSymbols[getQueryFieldType(q.ref, col-1)]
     val = gdbvalue(ifelse(TT === Any && !isbitstype(T), T, TT), q.row, col)
-    # println("  > "*string(val)*" of type "*string(TT))
     return val
   end
 end
@@ -53,12 +45,8 @@ function generate_namedtuple(::Type{NamedTuple{names, types}}, q) where {names, 
 end
 
 function Base.iterate(q::GdbQuery{NT}) where {NT}
-  # println("iterator 1")
-  # println(q.row.ref)
   done(q) && return nothing
-  # println(" > Not done")
   nt = generate_namedtuple(NT, q)
-  # println(" > Named tuple...")
   return nt, nothing
 end
 
@@ -104,11 +92,13 @@ function Query(table::Table, subfields::AbstractString, whereClause::AbstractStr
               types[i] = stricttypes ? ftype : Any
           end
       end
-      # TODO: may skip the first row... check out
       row = nextQuery(query)
-      println("First row: "*string(row.ref))
       return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(query, row)
     end
   end
-  return nothing
+  q = QueryObj(C_NULL, table, table.db)
+  row = Row(C_NULL, q, table, table.db)
+  header = Vector{Symbol}(undef, 0)
+  types = Vector{Type}(undef, 0)
+  return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(q, row)
 end
