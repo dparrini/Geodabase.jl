@@ -60,10 +60,9 @@ end
 
 
 function test_Tablesjl(db::Geodatabase.Database)
-  println("Testing query (with Tables, DataFrame, and CSV)...")
   tbl = Geodatabase.Table(db, "\\UNTRS")
 
-  println("Testing Query -> CSV...")
+  print("Testing Query -> CSV...")
   query1 = Geodatabase.Query(tbl, "SUB, BARR_1, BARR_2, MUN", "")
   if query1.row.ref != C_NULL
     CSV.write("testwrite.csv", query1)
@@ -71,14 +70,14 @@ function test_Tablesjl(db::Geodatabase.Database)
   else
     println("Query -> CSV test failed")
   end
-
+  
   println("Testing Query -> DataFrame....")
   query2 = Geodatabase.Query(tbl, "OBJECTID, SUB, BARR_1, BARR_2", "")
   if query2.row.ref != C_NULL
     df = DataFrames.DataFrame(query2)
     println(df)
     println()
-    println("Ok, done.")
+    println("Finished.")
   else
     println("Query -> DataFrame test failed")
   end
