@@ -33,7 +33,7 @@ function getTablesCount(db::Database)
 end
 
 
-function getTableNames(db::Database)
+function tablenames(db::Database)
   tables = Vector{String}(undef, 0)
   if db.ref != C_NULL
     tblcount = getTablesCount(db)

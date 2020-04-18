@@ -10,6 +10,7 @@ export Database,
        close,
        describe,
        columnnames,
+       tablenames,
        Search
 
 
