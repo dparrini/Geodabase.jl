@@ -1,9 +1,11 @@
 using Tables
 
 
-mutable struct GdbQuery{NT}
+mutable struct GdbSearch{NT}
     ref::QueryObj
     row::Row
+    fields::String
+    where::String
 end
 
 
@@ -74,28 +76,31 @@ TypeConversion = Dict(
 )
 
 
-Tables.istable(::Type{<:GdbQuery}) = true
-Tables.rowaccess(::Type{<:GdbQuery}) = true
-Tables.rows(q::GdbQuery) = q
-Tables.schema(q::GdbQuery{NamedTuple{names, types}}) where {names, types} = Tables.Schema(names, types)
+Tables.istable(::Type{<:GdbSearch}) = true
+Tables.rowaccess(::Type{<:GdbSearch}) = true
+Tables.rows(q::GdbSearch) = q
+Tables.schema(q::GdbSearch{NamedTuple{names, types}}) where {names, types} = Tables.Schema(names, types)
 
-Base.IteratorSize(::Type{<:GdbQuery}) = Base.SizeUnknown()
-Base.eltype(q::GdbQuery{NT}) where {NT} = NT
+Base.IteratorSize(::Type{<:GdbSearch}) = Base.SizeUnknown()
+Base.eltype(q::GdbSearch{NT}) where {NT} = NT
 
 
-function reset!(q::GdbQuery)
-  error("reset! not implemented yet")
+function reset!(q)
+  newq = Search(q.ref.tbl, q.fields, q.where)
+  q.ref = newq.ref
+  q.row = newq.row
+  return q
 end
 
 
-function done(q::GdbQuery)
+function done(q::GdbSearch)
   if q.row.ref == C_NULL
   end
   return q.row.ref == C_NULL
 end
 
 
-function getvalue(q::GdbQuery, col::Int, ::Type{T}) where {T}
+function getvalue(q::GdbSearch, col::Int, ::Type{T}) where {T}
   isnull = getIsNullByIndex(q.row, col-1)
   if isnull
       return missing
@@ -118,14 +123,14 @@ function generate_namedtuple(::Type{NamedTuple{names, types}}, q) where {names, 
 end
 
 
-function Base.iterate(q::GdbQuery{NT}) where {NT}
+function Base.iterate(q::GdbSearch{NT}) where {NT}
   done(q) && return nothing
   nt = generate_namedtuple(NT, q)
   return nt, nothing
 end
 
 
-function Base.iterate(q::GdbQuery{NT}, ::Nothing) where {NT}
+function Base.iterate(q::GdbSearch{NT}, ::Nothing) where {NT}
   q.row = nextQuery(q.ref)
   done(q) && return nothing
   nt = generate_namedtuple(NT, q)
@@ -150,7 +155,7 @@ any other Tables.jl implementation. Due note however that iterating an sqlite re
 to iterate over an `SQLite.Query` multiple times, but can't store the iterated NamedTuples, call `SQLite.reset!(q::SQLite.Query)` to
 re-execute the query and position the iterator back at the begining of the result set.
 """
-function Query(table::Table, subfields::AbstractString, 
+function Search(table::Table, subfields::AbstractString, 
   whereClause::AbstractString; stricttypes::Bool=true, nullable::Bool=true)
   if table.ref != C_NULL
     query = searchTable(table, subfields, whereClause)
@@ -173,12 +178,12 @@ function Query(table::Table, subfields::AbstractString,
           end
       end
       row = nextQuery(query)
-      return GdbQuery{NamedTuple{Tuple(header), Tuple{jltypes...}}}(query, row)
+      return GdbSearch{NamedTuple{Tuple(header), Tuple{jltypes...}}}(query, row, subfields, whereClause)
     end
   end
   q = QueryObj(C_NULL, table, table.db)
   row = Row(C_NULL, q, table, table.db)
   header = Vector{Symbol}(undef, 0)
   types = Vector{Type}(undef, 0)
-  return GdbQuery{NamedTuple{Tuple(header), Tuple{types...}}}(q, row)
+  return GdbSearch{NamedTuple{Tuple(header), Tuple{types...}}}(q, row, subfields, whereClause)
 end

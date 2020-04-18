@@ -6,10 +6,11 @@ export Database,
        Field,
        QueryObj,
        Row,
+       reset!,
        close,
        describe,
        columnnames,
-       Query
+       Search
 
 
 if isfile(joinpath(dirname(@__FILE__),"..","deps","deps.jl"))
