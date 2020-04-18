@@ -8,11 +8,11 @@ Implements an interface to the ESRI .gdb geodatabase files.
 
 ### `Database(file_path::String)`
 
-Create a database connection to the path specified in `file_path`.
+Creates a database connection to the path specified in `file_path`.
 
 ### `Table(db::Database, table_name::String)`
 
-Open a table `file_name` from `db` `Database` for queries.
+Opens a table `file_name` from `db` `Database` for queries.
 
 
 ### `Search(table::Table, fields::String, where_clause::String)`
@@ -25,16 +25,16 @@ criteria.
 - `where_clause = ""` to query all rows.
 - use common SQL statement operators to specify filters such as `=`, `>`, `AND`, `OR`, etc.
 
-The returned value can be consumed only once (forward direction), for instance to produce a `DataFrame` or to write a CSV file. To reuse it, a `reset!` must be made over the `Search` returned value.
+The returned value can be consumed only once (forward direction), for instance to produce a `DataFrame` or to write a CSV file. To reuse it, a `reset!` call must be made over the `Search` returned value.
 
 
 ### `describe(obj)`
 
-Print schema information (columns and types) of `obj`, which can be of the types `Database`, `Table`, `Query`, and `Row`.
+Prints schema information (columns and types) of `obj`, which can be of the types `Database`, `Table`, `Query`, and `Row`.
 
 ### `close(obj)`
 
-Free `obj` resources. It is called automatically when an `Geodatabase.jl` object (such as `Database`, `Table`, etc) is not used anymore.
+Frees `obj` resources. It is called automatically when an `Geodatabase.jl` object (such as `Database`, `Table`, etc) is not used anymore.
 
 ### `tablenames(db::Database)`
 
@@ -56,12 +56,12 @@ include("Geodatabase.jl")
 using .Geodatabase
 
 # Load a .gdb database
-db = Geodatabase.Database(file)
+db = Geodatabase.Database("the_database.gdb")
 
 # List available tables
-println(Geodatabase.tablenames(file))
+println(Geodatabase.tablenames(db))
 
-table = Geodatabase.Table(db, table_name)
+table = Geodatabase.Table(db, "\\a_table")
 
 # Query all available data from a table
 CSV.Write("file.csv", Geodatabase.Search(table, "*", ""))
@@ -69,4 +69,28 @@ CSV.Write("file.csv", Geodatabase.Search(table, "*", ""))
 # Query some of the fields of a table and filter by one of the fields
 DataFrames.DataFrame(Geodatabase.Search(table, "ObjectID, name, quantity", "quantity > 100"))
 
+```
+
+
+### Printing available table schema
+
+```julia
+db = Geodatabase.Database("a_database.gdb")
+table_names = Geodatabase.tablenames(db)
+
+for table_name in table_names
+  table = Geodatabase.Table(db, table_name)
+  Geodatabase.describe(table)
+end
+```
+
+
+### Using the same query twice with `reset!`
+
+```julia
+query = Geodatabase.Search(table, "*", "")
+CSV.Write("file.csv", query)
+
+Geodatabase.reset!(query)
+println(DataFrames.DataFrame(query))
 ```
