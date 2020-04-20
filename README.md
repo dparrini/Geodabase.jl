@@ -3,19 +3,37 @@
 Implements an interface to the ESRI .gdb geodatabase files.
 
 
-## Usage
+## Installation
+
+Copy the module to a desired location and use it with the code below:
+
+```
+include("Geodatabase.jl")
+using .Geodatabase
+```
 
 
-### `Database(file_path::String)`
+## Key Functions
+
+
+### `Geodatabase.Database`
+
+`Geodatabase.Database(file_path::String)` => `Geodatabase.Database`
 
 Creates a database connection to the path specified in `file_path`.
 
-### `Table(db::Database, table_name::String)`
+
+### `Geodatabase.Table`
+
+`Geodatabase.Table(db::Database, table_name::String)` => `Geodatabase.Table`
 
 Opens a table `file_name` from `db` `Database` for queries.
 
 
-### `Search(table::Table, fields::String, where_clause::String)`
+### `Geodatabase.Search`
+
+`Geodatabase.Search(table::Table, fields::AbstractString, where_clause::AbstractString)` => `Geodatabase.Query`
+`Geodatabase.Search(db::Database, table::AbstractString, fields::AbstractString, where_clause::AbstractString)` => `Geodatabase.Query`
 
 Returns a query for `fields` of the `table` meeting the `where_clause`
 criteria.
@@ -28,28 +46,43 @@ criteria.
 The returned value can be consumed only once (forward direction), for instance to produce a `DataFrame` or to write a CSV file. To reuse it, a `reset!` call must be made over the `Search` returned value.
 
 
-### `describe(obj)`
+### `Geodatabase.describe`
+
+`Geodatabase.describe(obj)` => `nothing`
 
 Prints schema information (columns and types) of `obj`, which can be of the types `Database`, `Table`, `Query`, and `Row`.
 
-### `close(obj)`
 
-Frees `obj` resources. It is called automatically when an `Geodatabase.jl` object (such as `Database`, `Table`, etc) is not used anymore.
+### `Geodatabase.close`
 
-### `tablenames(db::Database)`
+`Geodatabase.close(obj)` => `nothing`
+
+Frees Geodatabase resources associated with the `obj`. It is called automatically when an `Geodatabase.jl` object (such as `Database`, `Table`, etc) is not used anymore.
+
+
+### `Geodatabase.tablenames`
+
+`Geodatabase.tablenames(db::Database)` => `Vector{AbstractString}`
 
 Returns a `String` list of the table names of `db`.
 
-### `columnnames(obj)`
+
+### `Geodatabase.columnnames`
+
+`Geodatabase.columnnames(obj)` => `Vector{AbstractString}`
 
 Returns a `String` list of the column names of `obj`, which can be of the types `Table`, `Query`, and `Row`.
 
-### `reset!(obj::GdbSearch)`
+
+### `Geodatabase.reset!`
+
+`Geodatabase.reset!(obj::GdbSearch)` => `Geodatabase.Query`
+
 
 Restores the results of a `Geodatabase.Search` call. 
 
 
-## Example
+## Examples
 
 ```julia
 include("Geodatabase.jl")

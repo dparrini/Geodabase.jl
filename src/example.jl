@@ -10,7 +10,7 @@ file = "D:\\BDGD\\BANDEIRANTE_391_2017-12-31_M10_20180807-1511.gdb"
 
 function test_tables(db::Geodatabase.Database)
   for i in 1:1
-    for name in Geodatabase.getTableNames(db)
+    for name in Geodatabase.tablenames(db)
       println(" - "*name)
       tbl = Geodatabase.Table(db, name)
       if tbl.opened

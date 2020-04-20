@@ -22,6 +22,7 @@ function _close_database(db::Database)
         db.ref = C_NULL
         db.opened = false
     end
+    return
 end
 
 
@@ -76,6 +77,7 @@ function _close_table(tbl::Table)
         tbl.ref = C_NULL
         tbl.opened = false
     end
+    return
 end
 
 function getTableRowsCount(tbl::Table)
@@ -149,6 +151,7 @@ function _destroy_fieldinfo(fieldinfo::FieldInfo)
            (Ptr{Cvoid},), fieldinfo.ref,)
     fieldinfo.ref = C_NULL
   end
+  return
 end
 
 
@@ -239,7 +242,7 @@ function searchTable(tbl::Table, subfields, whereClause)
     end
     return query
   end
-  return QueryObj(C_NULL, tbl, tbl.db)
+  return Query(C_NULL, tbl, tbl.db)
 end
 
 
@@ -255,22 +258,23 @@ end
 
 
 function _open_query(tbl::Table)
-  query = QueryObj(C_NULL, tbl, tbl.db)
+  query = Query(C_NULL, tbl, tbl.db)
   query.ref = ccall((:gdbquery_create, libgeodb), Ptr{Cvoid}, ())
   # TODO: check if the query is successful and set a variable
   return query
 end
 
 
-function _close_query(query::QueryObj)
+function _close_query(query::Query)
   if query.ref != C_NULL
     ret = ccall((:gdbquery_close, libgeodb), Int32, (Ptr{Cvoid},), query.ref)
     query.ref = C_NULL
   end
+  return
 end
 
 
-function getQueryFieldInfo(query::QueryObj)
+function getQueryFieldInfo(query::Query)
   fdi = FieldInfo(C_NULL)
   if query.ref != C_NULL
     ref = ccall((:gdbquery_get_fieldinfo, libgeodb), Ptr{Cvoid}, 
@@ -309,7 +313,7 @@ function getQueryFields(query)
 end
 
 
-function nextQuery(query::QueryObj)
+function nextQuery(query::Query)
   if query.ref != C_NULL
     ret = ccall((:gdbquery_next, libgeodb), Ptr{Cvoid}, (Ptr{Cvoid},), query.ref)
     # rows are deleted with the parent query
@@ -328,6 +332,7 @@ function _destroy_row(row::Row)
            (Ptr{Cvoid},), row.ref,)
     row.ref = C_NULL
   end
+  return
 end
 
 function getRowField(row, index)

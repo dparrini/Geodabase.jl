@@ -2,7 +2,7 @@ using Tables
 
 
 mutable struct GdbSearch{NT}
-    ref::QueryObj
+    ref::Query
     row::Row
     fields::String
     where::String
@@ -85,14 +85,6 @@ Base.IteratorSize(::Type{<:GdbSearch}) = Base.SizeUnknown()
 Base.eltype(q::GdbSearch{NT}) where {NT} = NT
 
 
-function reset!(q)
-  newq = Search(q.ref.tbl, q.fields, q.where)
-  q.ref = newq.ref
-  q.row = newq.row
-  return q
-end
-
-
 function done(q::GdbSearch)
   if q.row.ref == C_NULL
   end
@@ -139,24 +131,25 @@ end
 
 
 """
-`SQLite.Query(db, sql::String; values=[]; stricttypes::Bool=true, nullable::Bool=true)`
+Constructs a `Geodatabase.GdbSearch` object by executing a search for `subfields`
+given a `whereClause` condition against `table` of a `db` object.
+"""
+function Search(db::Database, table::AbstractString, subfields::AbstractString, 
+  whereClause::AbstractString=""; stricttypes::Bool=true, nullable::Bool=true)
+  tbl = Geodatabase.Table(db, table)
+  if tbl.ref != C_NULL
+    return Search(tbl, subfields, whereClause, stricttypes, nullable)
+  end
+  error('Error trying to open table "'*table*'".')
+end
 
-Constructs a `SQLite.Query` object by executing the SQL query `sql` against the sqlite database `db` and querying
-the columns names and types of the result set, if any.
 
-Will bind `values` to any parameters in `sql`.
-`stricttypes=false` will remove strict column typing in the result set, making each column effectively `Vector{Any}`; in sqlite, individual
-column values are only loosely associated with declared column types, and instead each carry their own type information. This can lead to
-type errors when trying to query columns when a single type is expected.
-`nullable` controls whether `NULL` (`missing` in Julia) values are expected in a column.
-
-An `SQLite.Query` object will iterate NamedTuple rows by default, and also supports the Tables.jl interface for integrating with
-any other Tables.jl implementation. Due note however that iterating an sqlite result set is a forward-once-only operation. If you need
-to iterate over an `SQLite.Query` multiple times, but can't store the iterated NamedTuples, call `SQLite.reset!(q::SQLite.Query)` to
-re-execute the query and position the iterator back at the begining of the result set.
+"""
+Constructs a `Geodatabase.GdbSearch` object by executing a search for `subfields`
+given a `whereClause` condition against `table` object.
 """
 function Search(table::Table, subfields::AbstractString, 
-  whereClause::AbstractString; stricttypes::Bool=true, nullable::Bool=true)
+  whereClause::AbstractString=""; stricttypes::Bool=true, nullable::Bool=true)
   if table.ref != C_NULL
     query = searchTable(table, subfields, whereClause)
     if query.ref != C_NULL
@@ -181,7 +174,7 @@ function Search(table::Table, subfields::AbstractString,
       return GdbSearch{NamedTuple{Tuple(header), Tuple{jltypes...}}}(query, row, subfields, whereClause)
     end
   end
-  q = QueryObj(C_NULL, table, table.db)
+  q = Query(C_NULL, table, table.db)
   row = Row(C_NULL, q, table, table.db)
   header = Vector{Symbol}(undef, 0)
   types = Vector{Type}(undef, 0)
