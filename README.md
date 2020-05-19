@@ -97,7 +97,7 @@ println(Geodatabase.tablenames(db))
 table = Geodatabase.Table(db, "\\a_table")
 
 # Query all available data from a table
-CSV.Write("file.csv", Geodatabase.Search(table, "*", ""))
+CSV.write("file.csv", Geodatabase.Search(table, "*", ""))
 
 # Query some of the fields of a table and filter by one of the fields
 DataFrames.DataFrame(Geodatabase.Search(table, "ObjectID, name, quantity", "quantity > 100"))
@@ -122,7 +122,7 @@ end
 
 ```julia
 query = Geodatabase.Search(table, "*", "")
-CSV.Write("file.csv", query)
+CSV.write("file.csv", query)
 
 Geodatabase.reset!(query)
 println(DataFrames.DataFrame(query))

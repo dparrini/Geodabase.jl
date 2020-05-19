@@ -140,7 +140,7 @@ function Search(db::Database, table::AbstractString, subfields::AbstractString,
   if tbl.ref != C_NULL
     return Search(tbl, subfields, whereClause, stricttypes, nullable)
   end
-  error('Error trying to open table "'*table*'".')
+  error("Error trying to open table \""*table*"\".")
 end
 
 
