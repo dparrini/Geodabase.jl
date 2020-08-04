@@ -62,7 +62,7 @@ function _open_table(db::Database, table::String)
       (Ptr{Cvoid},Ptr{Cvoid},Cwstring), ref, db.ref, table)
 
     if ret != 0
-      _close_table(ref)
+      _close_table(ref, db.ref)
       ref = C_NULL
     end
   end
@@ -71,14 +71,23 @@ end
 
 
 function _close_table(tbl::Table)
-    if tbl.ref != C_NULL
+  if tbl.ref != C_NULL
+    _close_table(tbl.ref, tbl.db.ref)
+    tbl.ref = C_NULL
+    tbl.opened = false
+  end
+  return
+end
+
+
+function _close_table(tbl_ref::Ptr{Nothing}, db_ref::Ptr{Nothing})
+    if tbl_ref != C_NULL && db_ref != C_NULL
         ccall((:gdbtable_close, libgeodb), Cvoid, 
-          (Ptr{Cvoid},Ptr{Cvoid},), tbl.db.ref, tbl.ref)
-        tbl.ref = C_NULL
-        tbl.opened = false
+          (Ptr{Cvoid},Ptr{Cvoid},), db_ref, tbl_ref)
     end
     return
 end
+
 
 function getTableRowsCount(tbl::Table)
   if tbl.ref != C_NULL
