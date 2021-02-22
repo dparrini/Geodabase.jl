@@ -171,11 +171,16 @@ close(obj::Row) = _destroy_row(obj)
 Prints schema information (columns and types) of `obj`, which can be of 
 the types `Database`, `Table`, `Query`, and `Row`.
 """
-describe(obj::Database) = _describe_db(obj)
-describe(obj::Table) = _describe_table(obj)
-describe(obj::Query) = _describe_query(obj)
-describe(obj::Row) = _describe_row(obj)
-describe(obj::FieldInfo) = _describe_fieldinfo(obj)
+describe(obj::Database) = _describe_database(Base.stdout, obj)
+describe(obj::Table) = _describe_table(Base.stdout, obj)
+describe(obj::Query) = _describe_query(Base.stdout, obj)
+describe(obj::Row) = _describe_row(Base.stdout, obj)
+describe(obj::FieldInfo) = _describe_fieldinfo(Base.stdout, obj)
+describe(io::Core.IO, obj::Database) = _describe_database(io, obj)
+describe(io::Core.IO, obj::Table) = _describe_table(io, obj)
+describe(io::Core.IO, obj::Query) = _describe_query(io, obj)
+describe(io::Core.IO, obj::Row) = _describe_row(io, obj)
+describe(io::Core.IO, obj::FieldInfo) = _describe_fieldinfo(io, obj)
 
 
 """
@@ -200,26 +205,26 @@ end
 
 
 
-function _describe_database(db::Database)
+function _describe_database(io::Core.IO, db::Database)
   # TODO: implement
   return
 end
 
 
-function _describe_table(table::Table)
-  _describe_fieldinfo(getTableFieldInfo(table))
+function _describe_table(io::Core.IO, table::Table)
+  _describe_fieldinfo(io, getTableFieldInfo(table))
   return
 end
 
 
-function _describe_fieldinfo(fieldinfo::FieldInfo)
+function _describe_fieldinfo(io::Core.IO, fieldinfo::FieldInfo)
   # TODO: implement
   fcount = Geodatabase.getFieldInfoCount(fieldinfo)
-  println(" "*string(fcount)*" fields:")
+  println(io, " "*string(fcount)*" fields:")
   for field in 1:fcount
     name = Geodatabase.getFieldInfoName(fieldinfo, field-1)
     ftype = Geodatabase.TypeNames[Geodatabase.getFieldInfoType(fieldinfo, field-1)]
-    println(" - "*name*" : "*ftype)
+    println(io, " - "*name*" : "*ftype)
   end
   return
 end
@@ -235,8 +240,8 @@ function getTableFieldType(table, index)
 end
 
 
-function _describe_query(query::Query)
-  _describe_fieldinfo(getQueryFieldInfo(query))
+function _describe_query(io::Core.IO, query::Query)
+  _describe_fieldinfo(io, getQueryFieldInfo(query))
 end
 
 
@@ -250,8 +255,8 @@ function getQueryFieldType(query, index)
 end
 
 
-function _describe_row(row::Row)
-  _describe_fieldinfo(getRowFieldInfo(row))
+function _describe_row(io::Core.IO, row::Row)
+  _describe_fieldinfo(io, getRowFieldInfo(row))
 end
 
 
